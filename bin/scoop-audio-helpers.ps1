@@ -30,7 +30,22 @@ Function GetScoopAudioVst2Folder {
         }
         Set-ItemProperty -Path $defaultVst2FolderRegistryPath -Name "VSTPluginsPath" -Value $vstFolder -Force -ErrorAction Stop
     }
-    
+
+    return "$(Join-Path "$vstFolder" $scoopAudioName)"
+}
+
+Function GetScoopAudioVst3Folder {
+    param (
+        [string]$arch
+    )
+
+    if ($arch -eq '32bit' -and $systemArch -eq '64bit') {
+        $vstFolder = 'C:\Program Files (x86)\Common Files\VST3'
+    } else {
+        $vstFolder = 'C:\Program Files\Common Files\VST3'
+    }
+
+    [Console]::WriteLine("Using $vstFolder")
     return "$(Join-Path "$vstFolder" $scoopAudioName)"
 }
 
@@ -45,55 +60,75 @@ Function GetInstallArch {
     return $appJson.architecture
 }
 
-Function PostInstallVst2Folder {
+Function PostInstallVstFolder {
     param (
         [string]$arch,
+        [int]$vstVersion,
         [string]$appName,
         [string]$targetPath
     )
 
     if ([string]::IsNullOrEmpty($arch)) {
         Write-Error "No arch argument provided"
-        exit 
+        exit
     }
-    
+
+    if ($vstVersion -lt 2 -or $vstVersion -gt 3) {
+        Write-Error "Incorrect vst version"
+        exit
+    }
+
     if ([string]::IsNullOrEmpty($appName)) {
         Write-Error "No appName argument provided"
-        exit 
+        exit
     }
-    
+
     if ([string]::IsNullOrEmpty($targetPath)) {
         Write-Error "No target argument provided"
         exit
     }
-    
-    $scoopVstFolder = GetScoopAudioVst2Folder -arch $arch
+
+    if ($vstVersion -eq 3) {
+        $scoopVstFolder = GetScoopAudioVst3Folder -arch $arch
+    } else {
+        $scoopVstFolder = GetScoopAudioVst2Folder -arch $arch
+    }
     $appArchVstFolder = [io.Path]::Combine([string[]]($scoopVstFolder, "$($appName)-$($arch)"))
-    
+
     Write-Output "Linking $appName, $arch into $scoopVstFolder"
 
     New-Item -Path "$scoopVstFolder" -ItemType 'directory' -Force -ErrorAction Stop | Out-Null
     New-Item -Path "$appArchVstFolder" -ItemType Junction -Target "$targetPath" -ErrorAction Stop | Out-Null
 }
 
-Function PostUninstallVst2Folder {
+Function PostUninstallVstFolder {
     param (
         [string]$appPath,
+        [int]$vstVersion,
         [string]$appName
     )
 
     if ([string]::IsNullOrEmpty($appPath)) {
         Write-Error "No appPath argument provided"
-        exit 
+        exit
+    }
+
+    if ($vstVersion -lt 2 -or $vstVersion -gt 3) {
+        Write-Error "Incorrect vst version"
+        exit
     }
 
     if ([string]::IsNullOrEmpty($appName)) {
         Write-Error "No appName argument provided"
-        exit 
+        exit
     }
 
     $arch = GetInstallArch -appPath $appPath
-    $scoopVstFolder = GetScoopAudioVst2Folder -arch $arch
+    if ($vstVersion -eq 3) {
+        $scoopVstFolder = GetScoopAudioVst3Folder -arch $arch
+    } else {
+        $scoopVstFolder = GetScoopAudioVst2Folder -arch $arch
+    }
     $appArchVstFolder = [io.Path]::Combine([string[]]($scoopVstFolder, "$($appName)-$($arch)"))
 
     Write-Output "Removing $appName, $arch link in $scoopVstFolder"
@@ -113,10 +148,16 @@ if ([string]::IsNullOrEmpty($command)) {
 
 switch ($command) {
     'postinstall-vst2-folder' {
-        PostInstallVst2Folder -appName $args[1] -targetPath $args[2] -arch $args[3] 
+        PostInstallVstFolder -appName $args[1] -vstVersion 2 -targetPath $args[2] -arch $args[3]
+    }
+    'postinstall-vst3-folder' {
+        PostInstallVstFolder -appName $args[1] -vstVersion 3 -targetPath $args[2] -arch $args[3]
     }
     'postuninstall-vst2-folder' {
-        PostUninstallVst2Folder -appName $args[1] -appPath $args[2]
+        PostUninstallVstFolder -appName $args[1] -vstVersion 2 -appPath $args[2]
+    }
+    'postuninstall-vst3-folder' {
+        PostUninstallVstFolder -appName $args[1] -vstVersion 3 -appPath $args[2]
     }
     Default {
         Write-Output "'$command' is an invalid command"
